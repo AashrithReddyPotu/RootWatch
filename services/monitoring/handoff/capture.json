@@ -1,0 +1,18 @@
+{
+  "captured_at": "2026-10-02T21:45:11.610028+00:00",
+  "base_url": "http://127.0.0.1:8000",
+  "responses": [
+    {
+      "path": "/incidents",
+      "status": 200
+    },
+    {
+      "path": "/investigation/context/INC-001",
+      "status": 404
+    },
+    {
+      "path": "/investigation/context/INC-a926f9fe4a1c",
+      "status": 200
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+[{"incident_id":"INC-a926f9fe4a1c","service":"careers-backend","endpoint":"/api/applications","method":"POST","error_type":"DATABASE_CONNECTION_TIMEOUT","status":"resolved","start_time":"2026-10-02T21:37:34.458434Z","last_seen":"2026-10-02T21:38:23.129730Z","occurrence_count":11,"failure_rate":0.0,"severity":"high","deployment_version":"v1.4.8"}]
