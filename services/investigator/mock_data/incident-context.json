@@ -1,0 +1,59 @@
+{
+  "incident": {
+    "incident_id": "INC-001",
+    "service": "applications-api",
+    "endpoint": "/api/applications",
+    "method": "POST",
+    "error_type": "DATABASE_CONNECTION_TIMEOUT",
+    "severity": "high",
+    "status": "active",
+    "started_at": "2026-10-02T19:00:00Z",
+    "last_seen_at": "2026-10-02T19:04:00Z",
+    "occurrence_count": 47,
+    "failure_rate": 0.82
+  },
+  "recent_logs": [
+    {
+      "log_id": "LOG-182",
+      "timestamp": "2026-10-02T19:03:45Z",
+      "request_id": "REQ-991",
+      "status_code": 500,
+      "latency_ms": 1250,
+      "error_type": "DATABASE_CONNECTION_TIMEOUT",
+      "message": "Connection pool exhausted while submitting application"
+    },
+    {
+      "log_id": "LOG-183",
+      "timestamp": "2026-10-02T19:03:52Z",
+      "request_id": "REQ-992",
+      "status_code": 500,
+      "latency_ms": 1310,
+      "error_type": "DATABASE_CONNECTION_TIMEOUT",
+      "message": "Connection pool exhausted"
+    },
+    {
+      "log_id": "LOG-184",
+      "timestamp": "2026-10-02T19:04:00Z",
+      "request_id": "REQ-993",
+      "status_code": 200,
+      "latency_ms": 140,
+      "error_type": null,
+      "message": null
+    }
+  ],
+  "deployment": {
+    "version": "v1.4.8",
+    "deployed_at": "2026-10-02T18:57:00Z",
+    "commit_hash": "abc1234",
+    "files_changed": [
+      "services/application_service.py",
+      "database/connection.py"
+    ]
+  },
+  "statistics": {
+    "window_minutes": 5,
+    "total_requests": 57,
+    "failed_requests": 47,
+    "average_latency_ms": 820
+  }
+}

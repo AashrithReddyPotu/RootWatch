@@ -1,0 +1,123 @@
+openapi: 3.1.0
+info:
+  title: RootWatch Investigator API
+  version: 0.1.0
+servers:
+  - url: http://localhost:8001/api/v1
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /chat:
+    post:
+      operationId: investigateIncident
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: Evidence-backed investigation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+        "404":
+          description: Incident not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: Incident provider unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      required: [incident_id, message]
+      properties:
+        incident_id:
+          type: string
+          example: INC-001
+        message:
+          type: string
+          example: Why are applications failing?
+    EvidenceItem:
+      type: object
+      required: [id, label, source]
+      properties:
+        id: {type: string}
+        label: {type: string}
+        source: {type: string}
+    Claim:
+      type: object
+      required: [type, text, evidence_ids]
+      properties:
+        type:
+          type: string
+          enum: [fact, inference, recommendation]
+        text: {type: string}
+        evidence_ids:
+          type: array
+          items: {type: string}
+    CodeLocation:
+      type: object
+      required: [path, reason]
+      properties:
+        path: {type: string}
+        function: {type: [string, "null"]}
+        line: {type: [integer, "null"], minimum: 1}
+        reason: {type: string}
+        snippet: {type: [string, "null"]}
+    ChatResponse:
+      type: object
+      required: [incident_id, intent, answer, claims, evidence, code_locations, confidence]
+      properties:
+        incident_id: {type: string}
+        intent:
+          type: string
+          enum: [summary, timeline, cause, code_location, remediation]
+        answer: {type: string}
+        claims:
+          type: array
+          items: {$ref: "#/components/schemas/Claim"}
+        evidence:
+          type: array
+          items: {$ref: "#/components/schemas/EvidenceItem"}
+        code_locations:
+          type: array
+          items: {$ref: "#/components/schemas/CodeLocation"}
+        confidence: {type: number, minimum: 0, maximum: 1}
+        model_used: {type: [string, "null"]}
+    HealthResponse:
+      type: object
+      required: [status, service, incident_provider, llm_enabled]
+      properties:
+        status: {type: string}
+        service: {type: string}
+        incident_provider: {type: string}
+        llm_enabled: {type: boolean}
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: {type: string}
+            message: {type: string}
+            details: {type: [object, "null"]}

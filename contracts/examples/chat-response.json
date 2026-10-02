@@ -1,0 +1,35 @@
+{
+  "incident_id": "INC-001",
+  "intent": "cause",
+  "answer": "The evidence suggests that database connections are not released when validation fails, which can exhaust the connection pool.",
+  "claims": [
+    {
+      "type": "fact",
+      "text": "The endpoint has an 82% failure rate.",
+      "evidence_ids": ["STAT-failure-rate"]
+    },
+    {
+      "type": "inference",
+      "text": "The failure is likely connected to the recent deployment and matching database-handling code.",
+      "evidence_ids": ["LOG-dominant-error", "DEP-v1.4.8", "CODE-001"]
+    }
+  ],
+  "evidence": [
+    {
+      "id": "STAT-failure-rate",
+      "label": "47 of 57 requests failed in the last 5 minutes",
+      "source": "monitoring_statistics"
+    }
+  ],
+  "code_locations": [
+    {
+      "path": "services/application_service.py",
+      "function": "submit_application",
+      "line": 9,
+      "reason": "Matches the incident error, user question, or a file changed by the latest deployment.",
+      "snippet": "connection = get_connection()"
+    }
+  ],
+  "confidence": 0.93,
+  "model_used": "qwen2.5:3b"
+}
