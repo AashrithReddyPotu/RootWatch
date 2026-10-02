@@ -7,16 +7,13 @@ type Incident = {
   severity: 'HIGH' | 'MEDIUM'
   error: string
   failures: number
-  totalRequests: number
+  total: number
   deployment: string
   confidence: number
-  summary: string
+  file: string
+  functionName: string
+  line: number
   evidence: string[]
-  code: {
-    file: string
-    functionName: string
-    line: number
-  }
 }
 
 type Message = {
@@ -31,22 +28,18 @@ const incidents: Incident[] = [
     severity: 'HIGH',
     error: 'DATABASE_CONNECTION_TIMEOUT',
     failures: 47,
-    totalRequests: 57,
+    total: 57,
     deployment: 'v1.4.8',
     confidence: 88,
-    summary:
-      'The evidence suggests a database connection issue affecting the application submission service. Failures began shortly after deployment v1.4.8.',
+    file: 'services/application_service.py',
+    functionName: 'submit_application()',
+    line: 24,
     evidence: [
       '47 of 57 requests failed',
-      'DATABASE_CONNECTION_TIMEOUT dominates errors',
-      'Failures started after deployment v1.4.8',
+      'Database timeout dominates errors',
+      'Failures began after v1.4.8',
       'application_service.py changed',
     ],
-    code: {
-      file: 'services/application_service.py',
-      functionName: 'submit_application()',
-      line: 24,
-    },
   },
   {
     id: 'INC-002',
@@ -54,339 +47,570 @@ const incidents: Incident[] = [
     severity: 'MEDIUM',
     error: 'AUTH_TOKEN_ERROR',
     failures: 12,
-    totalRequests: 48,
+    total: 48,
     deployment: 'v1.4.7',
     confidence: 76,
-    summary:
-      'The evidence suggests authentication token validation failures affecting the profile endpoint. The issue appears concentrated around token verification.',
+    file: 'services/auth_service.py',
+    functionName: 'validate_token()',
+    line: 41,
     evidence: [
-      '12 of 48 profile requests failed',
-      'AUTH_TOKEN_ERROR dominates recent profile failures',
-      'Failures are isolated to authenticated profile requests',
-      'auth middleware is a likely investigation point',
+      '12 of 48 requests failed',
+      'Authentication errors dominate',
+      'Failures affect authenticated traffic',
+      'Token validation is a likely source',
     ],
-    code: {
-      file: 'services/auth_service.py',
-      functionName: 'validate_token()',
-      line: 41,
-    },
   },
 ]
 
-const initialMessages: Record<string, Message[]> = {
-  'INC-001': [
-    {
-      sender: 'ai',
-      text: incidents[0].summary,
-    },
-    {
-      sender: 'user',
-      text: 'Where should I look in the code?',
-    },
-    {
-      sender: 'ai',
-      text: 'Start with services/application_service.py. The submit_application() function may not guarantee database connection cleanup when an exception occurs.',
-    },
-  ],
-  'INC-002': [
-    {
-      sender: 'ai',
-      text: incidents[1].summary,
-    },
-  ],
+const telemetry = [
+  24, 31, 27, 43, 38, 55, 48, 61, 52, 73, 59, 68, 82, 64, 72, 57, 69, 48,
+  61, 43, 53, 39, 46, 34, 42, 29, 36, 26, 33, 22,
+]
+
+const trafficBars = [
+  32, 45, 38, 57, 44, 68, 53, 75, 62, 84, 69, 91, 73, 87, 65, 77, 58, 70,
+  49, 62, 42, 55, 37, 48,
+]
+
+function buildWave(values: number[]) {
+  const width = 1000
+  const height = 250
+
+  return values
+    .map((value, index) => {
+      const x = (index / (values.length - 1)) * width
+      const y = height - (value / 100) * height
+      return `${x},${y}`
+    })
+    .join(' ')
 }
 
-function getMockResponse(incident: Incident, question: string): string {
-  const query = question.toLowerCase()
+function getResponse(incident: Incident, question: string) {
+  const q = question.toLowerCase()
 
-  if (
-    query.includes('where') ||
-    query.includes('code') ||
-    query.includes('file')
-  ) {
-    return `The strongest code location is ${incident.code.file}, specifically ${incident.code.functionName} near line ${incident.code.line}. I would investigate this area first.`
+  if (q.includes('where') || q.includes('code') || q.includes('file')) {
+    return `Investigate ${incident.file}, specifically ${incident.functionName} near line ${incident.line}. This is the strongest code location based on the current incident evidence.`
   }
 
-  if (
-    query.includes('why') ||
-    query.includes('cause') ||
-    query.includes('root')
-  ) {
+  if (q.includes('why') || q.includes('cause') || q.includes('root')) {
     if (incident.id === 'INC-001') {
-      return 'The likely root cause is a database connection cleanup issue. Repeated DATABASE_CONNECTION_TIMEOUT failures began after deployment v1.4.8, and application_service.py was modified in that deployment.'
+      return 'The strongest hypothesis is database connection exhaustion or improper connection cleanup. The timeout spike began after deployment v1.4.8 and correlates with changes to the application service.'
     }
 
-    return 'The likely root cause is a token validation problem in the authentication path. AUTH_TOKEN_ERROR is the dominant failure type and the failures are concentrated on authenticated profile requests.'
+    return 'The strongest hypothesis is a token validation failure in the authentication path. AUTH_TOKEN_ERROR dominates the recent failures for authenticated profile requests.'
   }
 
-  if (
-    query.includes('fix') ||
-    query.includes('recommend') ||
-    query.includes('solution')
-  ) {
+  if (q.includes('fix') || q.includes('solution')) {
     if (incident.id === 'INC-001') {
-      return 'Recommendation: inspect submit_application() and guarantee database connections are released in all success and exception paths. A finally block or context-managed connection would be a good place to investigate.'
+      return 'Inspect connection lifecycle handling in submit_application(). Ensure connections are released on every exception path and validate the database pool configuration.'
     }
 
-    return 'Recommendation: inspect validate_token(), verify token expiration and signature handling, and review recent authentication configuration changes before redeploying.'
+    return 'Inspect validate_token(), token expiration handling, signature verification, and recent authentication configuration changes.'
   }
 
-  if (
-    query.includes('deployment') ||
-    query.includes('change') ||
-    query.includes('version')
-  ) {
-    return `This incident is associated with deployment ${incident.deployment}. The timing of the failures and the changed code make that deployment relevant evidence, although it does not by itself prove causation.`
-  }
-
-  if (
-    query.includes('confidence') ||
-    query.includes('sure')
-  ) {
-    return `Current investigation confidence is ${incident.confidence}%. This is based on the failure pattern, error frequency, deployment context, and likely code location.`
-  }
-
-  return `${incident.summary} The strongest current code lead is ${incident.code.file} in ${incident.code.functionName}.`
+  return `RootWatch has correlated ${incident.failures} failures with ${incident.error}. Current confidence is ${incident.confidence}%. The strongest code lead is ${incident.file}.`
 }
 
 function App() {
   const [selectedId, setSelectedId] = useState('INC-001')
-  const [messages, setMessages] =
-    useState<Record<string, Message[]>>(initialMessages)
   const [question, setQuestion] = useState('')
-  const [isThinking, setIsThinking] = useState(false)
+  const [thinking, setThinking] = useState(false)
 
-  const selectedIncident =
-    incidents.find((incident) => incident.id === selectedId) ?? incidents[0]
+  const [messages, setMessages] = useState<Record<string, Message[]>>({
+    'INC-001': [
+      {
+        sender: 'ai',
+        text: 'Telemetry correlation detected a sharp database timeout spike shortly after deployment v1.4.8. RootWatch is investigating application-service changes.',
+      },
+    ],
+    'INC-002': [
+      {
+        sender: 'ai',
+        text: 'Authentication failures are concentrated around profile requests. Token validation is the strongest current investigation path.',
+      },
+    ],
+  })
 
-  const currentMessages = messages[selectedIncident.id] ?? []
+  const incident =
+    incidents.find((item) => item.id === selectedId) ?? incidents[0]
+
+  const failureRate = Math.round(
+    (incident.failures / incident.total) * 100,
+  )
 
   const totalFailures = incidents.reduce(
-    (total, incident) => total + incident.failures,
+    (sum, item) => sum + item.failures,
     0,
   )
 
-  const criticalFailureRate = Math.round(
-    (incidents[0].failures / incidents[0].totalRequests) * 100,
-  )
-
-  const selectIncident = (id: string) => {
-    setSelectedId(id)
-    setQuestion('')
-  }
-
   const sendMessage = () => {
-    const trimmedQuestion = question.trim()
+    const value = question.trim()
 
-    if (!trimmedQuestion || isThinking) {
-      return
-    }
+    if (!value || thinking) return
 
-    const incidentId = selectedIncident.id
-
-    const userMessage: Message = {
-      sender: 'user',
-      text: trimmedQuestion,
-    }
+    const incidentId = incident.id
 
     setMessages((previous) => ({
       ...previous,
-      [incidentId]: [...(previous[incidentId] ?? []), userMessage],
+      [incidentId]: [
+        ...(previous[incidentId] ?? []),
+        { sender: 'user', text: value },
+      ],
     }))
 
     setQuestion('')
-    setIsThinking(true)
+    setThinking(true)
 
     window.setTimeout(() => {
-      const aiMessage: Message = {
-        sender: 'ai',
-        text: getMockResponse(selectedIncident, trimmedQuestion),
-      }
+      const response = getResponse(incident, value)
 
       setMessages((previous) => ({
         ...previous,
-        [incidentId]: [...(previous[incidentId] ?? []), aiMessage],
+        [incidentId]: [
+          ...(previous[incidentId] ?? []),
+          { sender: 'ai', text: response },
+        ],
       }))
 
-      setIsThinking(false)
-    }, 650)
+      setThinking(false)
+    }, 600)
   }
 
   return (
     <div className="app">
-      <header className="header">
-        <div>
-          <h1>RootWatch</h1>
-          <p>AI-Powered Incident Investigation</p>
+      <header className="topbar">
+        <div className="brand">
+          <div className="brand-mark">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+
+          <div>
+            <h1>ROOTWATCH</h1>
+            <p>AI INCIDENT INTELLIGENCE</p>
+          </div>
         </div>
 
-        <div className="system-status">
-          <span className="status-dot"></span>
-          System Monitoring
+        <div className="topbar-center">
+          <span className="live-dot"></span>
+          LIVE OBSERVABILITY
+        </div>
+
+        <div className="system-health">
+          <span>PLATFORM</span>
+          <strong>OPERATIONAL</strong>
         </div>
       </header>
 
-      <main>
-        <section className="stats">
-          <div className="stat-card">
-            <span>Active Incidents</span>
+      <main className="command-center">
+        <section className="metric-row">
+          <div className="metric">
+            <span>ACTIVE INCIDENTS</span>
             <strong>{incidents.length}</strong>
+            <small>Requires investigation</small>
           </div>
 
-          <div className="stat-card">
-            <span>Total Failures</span>
+          <div className="metric">
+            <span>TOTAL FAILURES</span>
             <strong>{totalFailures}</strong>
+            <small>Current monitoring window</small>
           </div>
 
-          <div className="stat-card">
-            <span>Affected Services</span>
-            <strong>{incidents.length}</strong>
+          <div className="metric">
+            <span>AFFECTED SERVICES</span>
+            <strong>02</strong>
+            <small>Applications / Profile</small>
           </div>
 
-          <div className="stat-card">
-            <span>Critical Failure Rate</span>
-            <strong>{criticalFailureRate}%</strong>
+          <div className="metric accent-metric">
+            <span>CRITICAL FAILURE RATE</span>
+            <strong>{failureRate}%</strong>
+            <small>Selected incident</small>
+          </div>
+
+          <div className="metric">
+            <span>AI CONFIDENCE</span>
+            <strong>{incident.confidence}%</strong>
+            <small>Evidence correlation</small>
           </div>
         </section>
 
-        <section className="workspace">
-          <aside className="panel incidents">
-            <h2>Active Incidents</h2>
-
-            {incidents.map((incident) => (
-              <div
-                key={incident.id}
-                className={`incident ${
-                  selectedIncident.id === incident.id ? 'selected' : ''
-                }`}
-                onClick={() => selectIncident(incident.id)}
-              >
-                <div className="incident-top">
-                  <strong>{incident.id}</strong>
-
-                  <span
-                    className={`badge ${incident.severity.toLowerCase()}`}
-                  >
-                    {incident.severity}
-                  </span>
-                </div>
-
-                <h3>{incident.endpoint}</h3>
-                <p>{incident.error}</p>
-                <span>{incident.failures} failures</span>
+        <section className="monitor-grid">
+          <aside className="left-column">
+            <div className="hud-card incident-list-card">
+              <div className="card-heading">
+                <span>INCIDENT STREAM</span>
+                <small>{incidents.length} ACTIVE</small>
               </div>
-            ))}
+
+              {incidents.map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  className={`incident-button ${
+                    item.id === incident.id ? 'active' : ''
+                  }`}
+                  onClick={() => {
+                    setSelectedId(item.id)
+                    setQuestion('')
+                  }}
+                >
+                  <div className="incident-button-top">
+                    <strong>{item.id}</strong>
+                    <span className={`severity ${item.severity.toLowerCase()}`}>
+                      {item.severity}
+                    </span>
+                  </div>
+
+                  <b>{item.endpoint}</b>
+                  <code>{item.error}</code>
+
+                  <div className="incident-footer">
+                    <span>{item.failures} FAILURES</span>
+                    <span>{item.deployment}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="hud-card distribution-card">
+              <div className="card-heading">
+                <span>ERROR DISTRIBUTION</span>
+              </div>
+
+              <div className="error-row">
+                <div>
+                  <span>DATABASE</span>
+                  <strong>79%</strong>
+                </div>
+                <div className="bar-track">
+                  <div className="bar-fill database"></div>
+                </div>
+              </div>
+
+              <div className="error-row">
+                <div>
+                  <span>AUTH</span>
+                  <strong>20%</strong>
+                </div>
+                <div className="bar-track">
+                  <div className="bar-fill auth"></div>
+                </div>
+              </div>
+
+              <div className="error-row">
+                <div>
+                  <span>OTHER</span>
+                  <strong>1%</strong>
+                </div>
+                <div className="bar-track">
+                  <div className="bar-fill other"></div>
+                </div>
+              </div>
+            </div>
           </aside>
 
-          <section className="panel investigation">
-            <div className="incident-header">
-              <div>
-                <span className="eyebrow">{selectedIncident.id}</span>
-                <h2>{selectedIncident.endpoint}</h2>
+          <section className="center-column">
+            <div className="hud-card telemetry-card">
+              <div className="telemetry-header">
+                <div>
+                  <span className="hud-label">LIVE FAILURE TELEMETRY</span>
+                  <h2>{incident.endpoint}</h2>
+                  <p>{incident.error}</p>
+                </div>
+
+                <div className="gauge">
+                  <div
+                    className="gauge-ring"
+                    style={
+                      {
+                        '--rate': `${failureRate * 3.6}deg`,
+                      } as React.CSSProperties
+                    }
+                  >
+                    <div className="gauge-inner">
+                      <strong>{failureRate}%</strong>
+                      <span>FAILURE RATE</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <span
-                className={`badge ${selectedIncident.severity.toLowerCase()}`}
-              >
-                {selectedIncident.severity}
-              </span>
-            </div>
+              <div className="telemetry-chart">
+                <div className="chart-grid"></div>
 
-            <div className="incident-metrics">
-              <div>
-                <span>Error</span>
-                <strong>{selectedIncident.error}</strong>
-              </div>
-
-              <div>
-                <span>Failures</span>
-                <strong>
-                  {selectedIncident.failures} / {selectedIncident.totalRequests}
-                </strong>
-              </div>
-
-              <div>
-                <span>Deployment</span>
-                <strong>{selectedIncident.deployment}</strong>
-              </div>
-            </div>
-
-            <h2 className="section-title">AI Investigation</h2>
-
-            <div className="chat">
-              {currentMessages.map((message, index) => (
-                <div
-                  className={`message ${
-                    message.sender === 'ai' ? 'ai' : 'user'
-                  }`}
-                  key={`${selectedIncident.id}-${index}`}
+                <svg
+                  viewBox="0 0 1000 250"
+                  preserveAspectRatio="none"
+                  className="wave-svg"
                 >
-                  <span>
-                    {message.sender === 'ai' ? 'ROOTWATCH AI' : 'YOU'}
-                  </span>
-                  <p>{message.text}</p>
-                </div>
-              ))}
+                  <defs>
+                    <linearGradient
+                      id="areaGradient"
+                      x1="0"
+                      x2="0"
+                      y1="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="0%"
+                        stopColor="#20e3d2"
+                        stopOpacity="0.35"
+                      />
+                      <stop
+                        offset="100%"
+                        stopColor="#20e3d2"
+                        stopOpacity="0"
+                      />
+                    </linearGradient>
 
-              {isThinking && (
-                <div className="message ai">
-                  <span>ROOTWATCH AI</span>
-                  <p>Analyzing incident evidence...</p>
+                    <filter id="glow">
+                      <feGaussianBlur
+                        stdDeviation="5"
+                        result="blur"
+                      />
+                      <feMerge>
+                        <feMergeNode in="blur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
+
+                  <polygon
+                    points={`0,250 ${buildWave(telemetry)} 1000,250`}
+                    fill="url(#areaGradient)"
+                  />
+
+                  <polyline
+                    points={buildWave(telemetry)}
+                    fill="none"
+                    stroke="#21e6d7"
+                    strokeWidth="3"
+                    filter="url(#glow)"
+                  />
+
+                  <polyline
+                    points={buildWave(
+                      telemetry.map((value) =>
+                        Math.max(5, value - 17),
+                      ),
+                    )}
+                    fill="none"
+                    stroke="#3b82f6"
+                    strokeOpacity="0.55"
+                    strokeWidth="1.5"
+                  />
+                </svg>
+
+                <div className="chart-labels">
+                  <span>-120s</span>
+                  <span>-90s</span>
+                  <span>-60s</span>
+                  <span>-30s</span>
+                  <span>NOW</span>
                 </div>
-              )}
+              </div>
+
+              <div className="telemetry-footer">
+                <div>
+                  <span>FAILURES</span>
+                  <strong>{incident.failures}</strong>
+                </div>
+
+                <div>
+                  <span>REQUESTS</span>
+                  <strong>{incident.total}</strong>
+                </div>
+
+                <div>
+                  <span>DEPLOYMENT</span>
+                  <strong>{incident.deployment}</strong>
+                </div>
+
+                <div>
+                  <span>STATUS</span>
+                  <strong className="danger-text">DEGRADED</strong>
+                </div>
+              </div>
             </div>
 
-            <div className="chat-input">
-              <input
-                type="text"
-                value={question}
-                placeholder="Ask RootWatch about this incident..."
-                onChange={(event) => setQuestion(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    sendMessage()
-                  }
-                }}
-              />
+            <div className="bottom-analytics">
+              <div className="hud-card traffic-card">
+                <div className="card-heading">
+                  <span>REQUEST ACTIVITY</span>
+                  <small>LAST 24 INTERVALS</small>
+                </div>
 
-              <button
-                type="button"
-                onClick={sendMessage}
-                disabled={isThinking}
-              >
-                {isThinking ? 'Analyzing...' : 'Ask'}
-              </button>
+                <div className="traffic-bars">
+                  {trafficBars.map((height, index) => (
+                    <div
+                      key={index}
+                      className="traffic-bar"
+                      style={{ height: `${height}%` }}
+                    ></div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="hud-card deployment-card">
+                <div className="card-heading">
+                  <span>DEPLOYMENT CORRELATION</span>
+                </div>
+
+                <div className="deployment-version">
+                  <span>VERSION</span>
+                  <strong>{incident.deployment}</strong>
+                </div>
+
+                <div className="deployment-line">
+                  <span className="deployment-node old"></span>
+                  <span className="deployment-path"></span>
+                  <span className="deployment-node current"></span>
+                </div>
+
+                <div className="deployment-status">
+                  <span>BEFORE</span>
+                  <strong>FAILURE SPIKE</strong>
+                  <span>NOW</span>
+                </div>
+              </div>
             </div>
           </section>
 
-          <aside className="panel evidence">
-            <h2>Evidence</h2>
+          <aside className="right-column">
+            <div className="hud-card ai-card">
+              <div className="card-heading">
+                <span>AI ROOT CAUSE ANALYSIS</span>
+                <small className="ai-online">● ONLINE</small>
+              </div>
 
-            {selectedIncident.evidence.map((item, index) => (
-              <div className="evidence-item" key={index}>
-                <span className="check">✓</span>
-                <p>{item}</p>
+              <div className="confidence-display">
+                <div
+                  className="confidence-ring"
+                  style={
+                    {
+                      '--confidence': `${incident.confidence * 3.6}deg`,
+                    } as React.CSSProperties
+                  }
+                >
+                  <div>
+                    <strong>{incident.confidence}%</strong>
+                    <span>CONFIDENCE</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="root-cause">
+                <span>LIKELY ROOT CAUSE</span>
+                <strong>
+                  {incident.id === 'INC-001'
+                    ? 'Database connection lifecycle'
+                    : 'Authentication token validation'}
+                </strong>
+              </div>
+
+              <div className="evidence-list">
+                {incident.evidence.map((item, index) => (
+                  <div className="evidence-line" key={index}>
+                    <span>✓</span>
+                    <p>{item}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="hud-card code-location-card">
+              <div className="card-heading">
+                <span>CODE TRACE</span>
+              </div>
+
+              <div className="code-window">
+                <div className="window-dots">
+                  <i></i>
+                  <i></i>
+                  <i></i>
+                </div>
+
+                <span>FILE</span>
+                <strong>{incident.file}</strong>
+
+                <span>FUNCTION</span>
+                <strong>{incident.functionName}</strong>
+
+                <span>LINE</span>
+                <strong>{incident.line}</strong>
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        <section className="hud-card investigator-console">
+          <div className="console-heading">
+            <div>
+              <span className="console-icon">AI</span>
+              <div>
+                <strong>ROOTWATCH INVESTIGATOR</strong>
+                <small>
+                  Evidence-grounded incident reasoning
+                </small>
+              </div>
+            </div>
+
+            <span className="console-status">
+              ● ANALYSIS ENGINE READY
+            </span>
+          </div>
+
+          <div className="console-messages">
+            {(messages[incident.id] ?? []).map((message, index) => (
+              <div
+                key={index}
+                className={`console-message ${message.sender}`}
+              >
+                <span>
+                  {message.sender === 'ai'
+                    ? 'ROOTWATCH AI'
+                    : 'ENGINEER'}
+                </span>
+                <p>{message.text}</p>
               </div>
             ))}
 
-            <div className="confidence">
-              <span>AI Confidence</span>
-              <strong>{selectedIncident.confidence}%</strong>
-            </div>
+            {thinking && (
+              <div className="console-message ai">
+                <span>ROOTWATCH AI</span>
+                <p className="analyzing">
+                  Correlating telemetry, deployment and code evidence...
+                </p>
+              </div>
+            )}
+          </div>
 
-            <h2 className="code-title">Likely Code Location</h2>
+          <div className="console-input">
+            <span className="prompt-symbol">›</span>
 
-            <div className="code-card">
-              <span>FILE</span>
-              <strong>{selectedIncident.code.file}</strong>
+            <input
+              value={question}
+              onChange={(event) =>
+                setQuestion(event.target.value)
+              }
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  sendMessage()
+                }
+              }}
+              placeholder={`Investigate ${incident.id}...`}
+            />
 
-              <span>FUNCTION</span>
-              <strong>{selectedIncident.code.functionName}</strong>
-
-              <span>LINE</span>
-              <strong>{selectedIncident.code.line}</strong>
-            </div>
-          </aside>
+            <button
+              type="button"
+              onClick={sendMessage}
+              disabled={thinking}
+            >
+              {thinking ? 'ANALYZING' : 'INVESTIGATE'}
+            </button>
+          </div>
         </section>
       </main>
     </div>
