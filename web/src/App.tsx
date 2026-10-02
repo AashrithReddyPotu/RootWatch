@@ -1,5 +1,9 @@
 import { useState } from 'react'
+import type { CSSProperties } from 'react'
+import { sendChatMessage } from './api/investigatorClient'
 import './App.css'
+
+const USE_MOCKS = import.meta.env.VITE_USE_MOCKS !== 'false'
 
 type Incident = {
   id: string
@@ -143,7 +147,7 @@ function App() {
     0,
   )
 
-  const sendMessage = () => {
+  const sendMessage = async () => {
     const value = question.trim()
 
     if (!value || thinking) return
@@ -154,26 +158,67 @@ function App() {
       ...previous,
       [incidentId]: [
         ...(previous[incidentId] ?? []),
-        { sender: 'user', text: value },
+        {
+          sender: 'user',
+          text: value,
+        },
       ],
     }))
 
     setQuestion('')
     setThinking(true)
 
-    window.setTimeout(() => {
-      const response = getResponse(incident, value)
+    try {
+      if (USE_MOCKS) {
+        await new Promise((resolve) => window.setTimeout(resolve, 600))
+
+        const mockResponse = getResponse(incident, value)
+
+        setMessages((previous) => ({
+          ...previous,
+          [incidentId]: [
+            ...(previous[incidentId] ?? []),
+            {
+              sender: 'ai',
+              text: mockResponse,
+            },
+          ],
+        }))
+      } else {
+        const response = await sendChatMessage({
+          incident_id: incidentId,
+          message: value,
+        })
+
+        setMessages((previous) => ({
+          ...previous,
+          [incidentId]: [
+            ...(previous[incidentId] ?? []),
+            {
+              sender: 'ai',
+              text: response.answer,
+            },
+          ],
+        }))
+      }
+    } catch (error) {
+      console.error('RootWatch investigator API error:', error)
+
+      const fallback = getResponse(incident, value)
 
       setMessages((previous) => ({
         ...previous,
         [incidentId]: [
           ...(previous[incidentId] ?? []),
-          { sender: 'ai', text: response },
+          {
+            sender: 'ai',
+            text: `${fallback} Local investigation fallback activated because the AI service is currently unavailable.`,
+          },
         ],
       }))
-
+    } finally {
       setThinking(false)
-    }, 600)
+    }
   }
 
   return (
@@ -258,12 +303,16 @@ function App() {
                 >
                   <div className="incident-button-top">
                     <strong>{item.id}</strong>
-                    <span className={`severity ${item.severity.toLowerCase()}`}>
+
+                    <span
+                      className={`severity ${item.severity.toLowerCase()}`}
+                    >
                       {item.severity}
                     </span>
                   </div>
 
                   <b>{item.endpoint}</b>
+
                   <code>{item.error}</code>
 
                   <div className="incident-footer">
@@ -284,6 +333,7 @@ function App() {
                   <span>DATABASE</span>
                   <strong>79%</strong>
                 </div>
+
                 <div className="bar-track">
                   <div className="bar-fill database"></div>
                 </div>
@@ -294,6 +344,7 @@ function App() {
                   <span>AUTH</span>
                   <strong>20%</strong>
                 </div>
+
                 <div className="bar-track">
                   <div className="bar-fill auth"></div>
                 </div>
@@ -304,6 +355,7 @@ function App() {
                   <span>OTHER</span>
                   <strong>1%</strong>
                 </div>
+
                 <div className="bar-track">
                   <div className="bar-fill other"></div>
                 </div>
@@ -315,8 +367,12 @@ function App() {
             <div className="hud-card telemetry-card">
               <div className="telemetry-header">
                 <div>
-                  <span className="hud-label">LIVE FAILURE TELEMETRY</span>
+                  <span className="hud-label">
+                    LIVE FAILURE TELEMETRY
+                  </span>
+
                   <h2>{incident.endpoint}</h2>
+
                   <p>{incident.error}</p>
                 </div>
 
@@ -326,7 +382,7 @@ function App() {
                     style={
                       {
                         '--rate': `${failureRate * 3.6}deg`,
-                      } as React.CSSProperties
+                      } as CSSProperties
                     }
                   >
                     <div className="gauge-inner">
@@ -358,6 +414,7 @@ function App() {
                         stopColor="#20e3d2"
                         stopOpacity="0.35"
                       />
+
                       <stop
                         offset="100%"
                         stopColor="#20e3d2"
@@ -370,6 +427,7 @@ function App() {
                         stdDeviation="5"
                         result="blur"
                       />
+
                       <feMerge>
                         <feMergeNode in="blur" />
                         <feMergeNode in="SourceGraphic" />
@@ -430,7 +488,9 @@ function App() {
 
                 <div>
                   <span>STATUS</span>
-                  <strong className="danger-text">DEGRADED</strong>
+                  <strong className="danger-text">
+                    DEGRADED
+                  </strong>
                 </div>
               </div>
             </div>
@@ -447,7 +507,9 @@ function App() {
                     <div
                       key={index}
                       className="traffic-bar"
-                      style={{ height: `${height}%` }}
+                      style={{
+                        height: `${height}%`,
+                      }}
                     ></div>
                   ))}
                 </div>
@@ -482,7 +544,9 @@ function App() {
             <div className="hud-card ai-card">
               <div className="card-heading">
                 <span>AI ROOT CAUSE ANALYSIS</span>
-                <small className="ai-online">● ONLINE</small>
+                <small className="ai-online">
+                  ● ONLINE
+                </small>
               </div>
 
               <div className="confidence-display">
@@ -491,11 +555,14 @@ function App() {
                   style={
                     {
                       '--confidence': `${incident.confidence * 3.6}deg`,
-                    } as React.CSSProperties
+                    } as CSSProperties
                   }
                 >
                   <div>
-                    <strong>{incident.confidence}%</strong>
+                    <strong>
+                      {incident.confidence}%
+                    </strong>
+
                     <span>CONFIDENCE</span>
                   </div>
                 </div>
@@ -503,6 +570,7 @@ function App() {
 
               <div className="root-cause">
                 <span>LIKELY ROOT CAUSE</span>
+
                 <strong>
                   {incident.id === 'INC-001'
                     ? 'Database connection lifecycle'
@@ -512,7 +580,10 @@ function App() {
 
               <div className="evidence-list">
                 {incident.evidence.map((item, index) => (
-                  <div className="evidence-line" key={index}>
+                  <div
+                    className="evidence-line"
+                    key={index}
+                  >
                     <span>✓</span>
                     <p>{item}</p>
                   </div>
@@ -548,9 +619,15 @@ function App() {
         <section className="hud-card investigator-console">
           <div className="console-heading">
             <div>
-              <span className="console-icon">AI</span>
+              <span className="console-icon">
+                AI
+              </span>
+
               <div>
-                <strong>ROOTWATCH INVESTIGATOR</strong>
+                <strong>
+                  ROOTWATCH INVESTIGATOR
+                </strong>
+
                 <small>
                   Evidence-grounded incident reasoning
                 </small>
@@ -563,23 +640,27 @@ function App() {
           </div>
 
           <div className="console-messages">
-            {(messages[incident.id] ?? []).map((message, index) => (
-              <div
-                key={index}
-                className={`console-message ${message.sender}`}
-              >
-                <span>
-                  {message.sender === 'ai'
-                    ? 'ROOTWATCH AI'
-                    : 'ENGINEER'}
-                </span>
-                <p>{message.text}</p>
-              </div>
-            ))}
+            {(messages[incident.id] ?? []).map(
+              (message, index) => (
+                <div
+                  key={index}
+                  className={`console-message ${message.sender}`}
+                >
+                  <span>
+                    {message.sender === 'ai'
+                      ? 'ROOTWATCH AI'
+                      : 'ENGINEER'}
+                  </span>
+
+                  <p>{message.text}</p>
+                </div>
+              ),
+            )}
 
             {thinking && (
               <div className="console-message ai">
                 <span>ROOTWATCH AI</span>
+
                 <p className="analyzing">
                   Correlating telemetry, deployment and code evidence...
                 </p>
@@ -588,7 +669,9 @@ function App() {
           </div>
 
           <div className="console-input">
-            <span className="prompt-symbol">›</span>
+            <span className="prompt-symbol">
+              ›
+            </span>
 
             <input
               value={question}
@@ -597,7 +680,7 @@ function App() {
               }
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
-                  sendMessage()
+                  void sendMessage()
                 }
               }}
               placeholder={`Investigate ${incident.id}...`}
@@ -605,10 +688,12 @@ function App() {
 
             <button
               type="button"
-              onClick={sendMessage}
+              onClick={() => void sendMessage()}
               disabled={thinking}
             >
-              {thinking ? 'ANALYZING' : 'INVESTIGATE'}
+              {thinking
+                ? 'ANALYZING'
+                : 'INVESTIGATE'}
             </button>
           </div>
         </section>
