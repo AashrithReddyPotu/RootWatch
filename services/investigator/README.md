@@ -54,7 +54,7 @@ API mode calls the monitoring service:
 
 ```env
 INCIDENT_PROVIDER=api
-MONITORING_API_URL=http://localhost:8000/api/v1
+MONITORING_API_URL=http://localhost:8000
 ```
 
 The monitoring service must implement:

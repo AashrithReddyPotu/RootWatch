@@ -1,5 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { sendChatMessage } from './api/investigatorClient'
+import {
+  getIncidents,
+  getInvestigationContext,
+} from './api/monitoringClient'
+import type {
+  Incident as ApiIncident,
+  InvestigationContext,
+} from './types/api'
 import './App.css'
 
 type Incident = {
@@ -25,7 +33,7 @@ type ChatMessage = {
   text: string
 }
 
-const incidents: Incident[] = [
+const mockIncidents: Incident[] = [
   {
     id: 'INC-001',
     endpoint: '/api/applications',
@@ -128,6 +136,56 @@ function mockAnswer(incident: Incident, message: string) {
   }
 
   return `RootWatch detected ${incident.failures} failures across ${incident.requests} requests for ${incident.endpoint}. The current AI confidence is ${incident.confidence}%.`
+}
+
+function mapMonitoringIncident(
+  incident: ApiIncident,
+  context?: InvestigationContext,
+): Incident {
+  const deployment =
+    context?.deployment?.deployment_version ??
+    incident.deployment_version
+  const changedFiles =
+    context?.deployment?.files_changed ?? []
+  const primaryFile =
+    changedFiles[0] ?? 'Source location pending analysis'
+  const requests =
+    context?.statistics.total_requests ??
+    incident.occurrence_count
+  const failed =
+    context?.statistics.failed_requests ??
+    incident.occurrence_count
+  const evidence = [
+    `${failed} of ${requests} requests failed`,
+    `${incident.error_type} is the detected error type`,
+    `Incident detected on ${incident.method} ${incident.endpoint}`,
+  ]
+
+  if (deployment) {
+    evidence.push(`Correlated with deployment ${deployment}`)
+  }
+
+  if (changedFiles.length) {
+    evidence.push(`${primaryFile} changed in the deployment`)
+  }
+
+  return {
+    id: incident.incident_id,
+    endpoint: incident.endpoint,
+    severity: incident.severity.toUpperCase() as Incident['severity'],
+    error: incident.error_type,
+    failures: failed,
+    requests,
+    failureRate: Math.round(incident.failure_rate * 100),
+    deployment: deployment || 'Unknown',
+    confidence: 0,
+    service: incident.service,
+    file: primaryFile,
+    functionName: 'Pending investigation',
+    line: 1,
+    rootCause: incident.error_type.replaceAll('_', ' '),
+    evidence,
+  }
 }
 
 function FailureChart({ incident }: { incident: Incident }) {
@@ -548,9 +606,11 @@ function CodePanel({
 
 function IncidentSelector({
   incident,
+  incidents,
   setSelectedId,
 }: {
   incident: Incident
+  incidents: Incident[]
   setSelectedId: (id: string) => void
 }) {
   return (
@@ -667,8 +727,10 @@ function FilterBar() {
 
 function KpiCards({
   incident,
+  incidents,
 }: {
   incident: Incident
+  incidents: Incident[]
 }) {
   const totalFailures = incidents.reduce(
     (sum, item) => sum + item.failures,
@@ -726,8 +788,14 @@ function KpiCards({
 }
 
 function App() {
+  const useMocks =
+    import.meta.env.VITE_USE_MOCKS !== 'false'
+
+  const [incidents, setIncidents] =
+    useState<Incident[]>(mockIncidents)
+
   const [selectedId, setSelectedId] =
-    useState('INC-001')
+    useState(mockIncidents[0].id)
 
   const [activeView, setActiveView] =
     useState('Dashboard')
@@ -760,8 +828,58 @@ function App() {
       incidents.find(
         (item) => item.id === selectedId,
       ) ?? incidents[0],
-    [selectedId],
+    [selectedId, incidents],
   )
+
+  useEffect(() => {
+    if (useMocks) return
+
+    let cancelled = false
+
+    async function loadIncidents() {
+      try {
+        const rows = await getIncidents()
+        const mapped = await Promise.all(
+          rows.map(async (row) => {
+            try {
+              const context =
+                await getInvestigationContext(
+                  row.incident_id,
+                )
+              return mapMonitoringIncident(
+                row,
+                context,
+              )
+            } catch {
+              return mapMonitoringIncident(row)
+            }
+          }),
+        )
+
+        if (!cancelled && mapped.length) {
+          setIncidents(mapped)
+          setSelectedId((current) =>
+            mapped.some(
+              (item) => item.id === current,
+            )
+              ? current
+              : mapped[0].id,
+          )
+        }
+      } catch (error) {
+        console.error(
+          'Monitoring API unavailable; retaining mock incidents',
+          error,
+        )
+      }
+    }
+
+    void loadIncidents()
+
+    return () => {
+      cancelled = true
+    }
+  }, [useMocks])
 
   async function handleSend() {
     const message = question.trim()
@@ -785,10 +903,6 @@ function App() {
     setLoading(true)
 
     try {
-      const useMocks =
-        import.meta.env.VITE_USE_MOCKS !==
-        'false'
-
       let answer = ''
 
       if (useMocks) {
@@ -808,6 +922,39 @@ function App() {
           })
 
         answer = response.answer
+
+        setIncidents((previous) =>
+          previous.map((item) => {
+            if (item.id !== currentId) {
+              return item
+            }
+
+            const location =
+              response.code_locations[0]
+            const inference =
+              response.claims.find(
+                (claim) =>
+                  claim.type === 'inference',
+              )
+
+            return {
+              ...item,
+              confidence: Math.round(
+                response.confidence * 100,
+              ),
+              evidence: response.evidence.map(
+                (entry) => entry.label,
+              ),
+              file: location?.path ?? item.file,
+              functionName: location?.function
+                ? `${location.function}()`
+                : item.functionName,
+              line: location?.line ?? item.line,
+              rootCause:
+                inference?.text ?? item.rootCause,
+            }
+          }),
+        )
       }
 
       setMessages((previous) => ({
@@ -938,11 +1085,15 @@ function App() {
       <main className="dashboard">
         <FilterBar />
 
-        <KpiCards incident={incident} />
+        <KpiCards
+          incident={incident}
+          incidents={incidents}
+        />
 
         <section className="dashboard-grid">
           <IncidentSelector
             incident={incident}
+            incidents={incidents}
             setSelectedId={setSelectedId}
           />
 
@@ -999,11 +1150,15 @@ function App() {
           </div>
         </section>
 
-        <KpiCards incident={incident} />
+        <KpiCards
+          incident={incident}
+          incidents={incidents}
+        />
 
         <section className="dashboard-grid">
           <IncidentSelector
             incident={incident}
+            incidents={incidents}
             setSelectedId={setSelectedId}
           />
 
@@ -1464,6 +1619,7 @@ function App() {
         <section className="dashboard-grid">
           <IncidentSelector
             incident={incident}
+            incidents={incidents}
             setSelectedId={setSelectedId}
           />
 
@@ -1604,6 +1760,7 @@ function App() {
         <section className="dashboard-grid">
           <IncidentSelector
             incident={incident}
+            incidents={incidents}
             setSelectedId={setSelectedId}
           />
 

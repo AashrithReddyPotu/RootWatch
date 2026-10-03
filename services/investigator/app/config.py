@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     host: str = "0.0.0.0"
     port: int = 8001
     incident_provider: str = "mock"
-    monitoring_api_url: str = "http://localhost:8000/api/v1"
+    monitoring_api_url: str = "http://localhost:8000"
     mock_incident_path: Path = Path("mock_data/incident-context.json")
     source_root: Path = Path("demo_repository")
     use_llm: bool = True

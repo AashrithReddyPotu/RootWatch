@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 
 from app.config import Settings
@@ -42,3 +43,17 @@ def test_summary_works_without_model():
     )
     assert "47 of 57" in result.answer
     assert result.confidence >= 0.7
+
+
+def test_accepts_shared_monitoring_contract():
+    contract_path = SERVICE_ROOT.parents[1] / "contracts/examples/investigation-context.json"
+    payload = json.loads(contract_path.read_text(encoding="utf-8"))
+    from app.models import IncidentContext
+
+    context = IncidentContext.model_validate(payload)
+    assert context.incident.started_at == context.statistics.window_start
+    assert context.recent_logs[0].log_id.startswith("demo-log-")
+    assert context.recent_logs[0].message == "Connection pool exhausted"
+    assert context.deployment is not None
+    assert context.deployment.version == "v1.4.8"
+    assert context.statistics.window_minutes >= 1
