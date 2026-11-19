@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # RootWatch
 
 RootWatch is a three-service incident detection and investigation demo:
